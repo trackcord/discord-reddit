@@ -89,7 +89,7 @@ function extractInvitesFromText(text: string, inviteRegex: RegExp): Set<string> 
     const matches = text.match(inviteRegex);
     if (matches) {
         matches.forEach(match => {
-            const invite = match.split('/').pop()!.toLowerCase();
+            const invite = match.split('/').pop()!;
             invites.add(invite);
         });
     }
