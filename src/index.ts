@@ -1,68 +1,33 @@
 import { Session, ClientIdentifier } from "node-tls-client";
 import winston from 'winston';
-
+import { handleRateLimit } from './utils/rateLimitHandler';
+import type { RedditCommentsResponse, RedditComment } from "./types/comment";
+import type { RedditPostResponse } from "./types/post";
 
 const logger = winston.createLogger({
     level: 'info',
     format: winston.format.combine(
+        winston.format.colorize(),
         winston.format.timestamp(),
         winston.format.printf(({ timestamp, level, message }) => {
-            return `${timestamp} ${level}: ${message}`;
+            return `[${timestamp}] [${level}] ${message}`;
         })
     ),
     transports: [
         new winston.transports.Console(),
-        new winston.transports.File({ filename: 'subreddit_scan.log' })
+        new winston.transports.File({ filename: 'discord_invites.log' })
     ]
 });
 
-interface RedditPost {
-    data: {
-        selftext: string;
-        url: string;
-        title: string;
-        author: string;
-        created_utc: number;
-        permalink: string;
-        id: string;
-    }
-}
-
-interface RedditComment {
-    data: {
-        body: string;
-        author: string;
-        created_utc: number;
-        permalink: string;
-        replies?: {
-            data?: {
-                children: RedditComment[];
-            }
-        }
-    }
-}
-
-interface RedditResponse {
-    data: {
-        after: string | null;
-        children: RedditPost[];
-    }
-}
-
-interface RedditCommentsResponse {
-    kind: string;
-    data: {
-        children: RedditComment[];
-    }
-}
-
-async function fetchSubredditPage(session: Session, subreddit: string, after: string | null): Promise<RedditResponse> {
-    const url = `https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
+async function fetchSubredditPage(session: Session, subreddit: string, after: string | null): Promise<RedditPostResponse> {
+    const url = `https://oauth.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
     const response = await session.get(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        cookies: {
+            "reddit_session": "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml9zdnk5dDBkcCIsImV4cCI6MTc1MDY0MzI2NS43MzcwNDIsImlhdCI6MTczNTAwNDg2NS43MzcwNDIsImp0aSI6IlBhb0xkWDJpSm53MFdlTlV0RzR0UjdCam9NZjczZyIsImNpZCI6ImNvb2tpZSIsImxjYSI6MTY2NDM0MTkwMDAwMCwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsInYxIjoiMjI2Mzc0OTE2NzE0OSwyMDI0LTEyLTI0VDAxOjQ3OjQ1LGQxNjVlZGEyYjQ4Yzg4ZDY5ZjE1MTQxODQwNzMxYmY1NjJmYTZkMDEiLCJmbG8iOjJ9.S0S42pUYhj0b4J8c8B8ERURV6fuz8wtOaX7xGNIWSQYb7YZdNK9a01nWnMU3k4lSB4FhJB-5d0EsjdmNpP5vAYfvWsNBJQ3NT3LEDTc34Yie4RIqr2A1WCRhtChHbcqy5fv-pgHa4ONPIbuu7Kk7Ag_KAF8Sm0HGNsyF5B6oByIYyFDNpod4hFLGLLjHQrXjLOsWCrJ_Em-y_Q9XW7oHOR_99TimcDLrwslXhgChCkaBVB_rPRx24mRKqGK0dixwjQ5_FAYo_K24pZBl6BHixdJg8J11gKe2_ZqtS7vHHWh5tiEFSdcs1q_nRP_0WYUrD4Vkj65VPMPIDFUD9QVvJw"
         }
     });
+
+    await handleRateLimit(session, response);
 
     if (response.status !== 200) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -71,12 +36,14 @@ async function fetchSubredditPage(session: Session, subreddit: string, after: st
 }
 
 async function fetchPostComments(session: Session, permalink: string): Promise<RedditCommentsResponse[]> {
-    const url = `https://www.reddit.com${permalink}.json?sort=top&raw_json=1&profile_img=false&sr_detail=false&context=`;
+    const url = `https://oauth.reddit.com${permalink}.json?sort=top&raw_json=1&profile_img=false&sr_detail=false&context=`;
     const response = await session.get(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        cookies: {
+            "reddit_session": "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml9zdnk5dDBkcCIsImV4cCI6MTc1MDY0MzI2NS43MzcwNDIsImlhdCI6MTczNTAwNDg2NS43MzcwNDIsImp0aSI6IlBhb0xkWDJpSm53MFdlTlV0RzR0UjdCam9NZjczZyIsImNpZCI6ImNvb2tpZSIsImxjYSI6MTY2NDM0MTkwMDAwMCwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsInYxIjoiMjI2Mzc0OTE2NzE0OSwyMDI0LTEyLTI0VDAxOjQ3OjQ1LGQxNjVlZGEyYjQ4Yzg4ZDY5ZjE1MTQxODQwNzMxYmY1NjJmYTZkMDEiLCJmbG8iOjJ9.S0S42pUYhj0b4J8c8B8ERURV6fuz8wtOaX7xGNIWSQYb7YZdNK9a01nWnMU3k4lSB4FhJB-5d0EsjdmNpP5vAYfvWsNBJQ3NT3LEDTc34Yie4RIqr2A1WCRhtChHbcqy5fv-pgHa4ONPIbuu7Kk7Ag_KAF8Sm0HGNsyF5B6oByIYyFDNpod4hFLGLLjHQrXjLOsWCrJ_Em-y_Q9XW7oHOR_99TimcDLrwslXhgChCkaBVB_rPRx24mRKqGK0dixwjQ5_FAYo_K24pZBl6BHixdJg8J11gKe2_ZqtS7vHHWh5tiEFSdcs1q_nRP_0WYUrD4Vkj65VPMPIDFUD9QVvJw"
         }
     });
+
+    await handleRateLimit(session, response);
 
     if (response.status !== 200) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -120,8 +87,9 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
         timeout: 30000,
         headers: {
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'application/json'
-        }
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
     });
 
     const invites = new Set<string>();
@@ -161,7 +129,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                         for (const comments of commentsData) {
                             processComments(comments.data.children, inviteRegex, invites);
                         }
-                        await Bun.sleep(2000);
                     } catch (error) {
                         logger.error(`Error fetching comments for post ${post.data.id}:`, error);
                     }
@@ -173,8 +140,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                     break;
                 }
 
-
-                await Bun.sleep(2000);
                 logger.info(`Processed page ${processedPages}/${pages}, found ${invites.size} unique invites so far`);
 
             } catch (error) {
@@ -201,3 +166,4 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
 
 scanSubredditForDiscordLinks('oldrobloxrevivals', 200);
+
