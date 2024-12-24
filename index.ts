@@ -1,8 +1,21 @@
 import { Session, ClientIdentifier } from "node-tls-client";
-import * as fs from 'fs/promises';
+import winston from 'winston';
+
+const logger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.printf(({ timestamp, level, message }) => {
+            return `${timestamp} ${level}: ${message}`;
+        })
+    ),
+    transports: [
+        new winston.transports.Console(),
+        new winston.transports.File({ filename: 'subreddit_scan.log' })
+    ]
+});
 
 interface RedditPost {
-    kind: string;
     data: {
         selftext: string;
         url: string;
@@ -14,79 +27,73 @@ interface RedditPost {
 }
 
 interface RedditResponse {
-    kind: string;
     data: {
         after: string | null;
         children: RedditPost[];
     }
 }
 
+async function fetchSubredditPage(session: Session, subreddit: string, after: string | null): Promise<RedditResponse> {
+    const url = `https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&after=${after}&limit=103`;
+    const response = await session.get(url);
+    if (response.status !== 200) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+}
+
 async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 10) {
     const session = new Session({ clientIdentifier: ClientIdentifier.chrome_120, timeout: 30000 });
+    const invites = new Set<string>();
 
     try {
         await session.init();
+        logger.info(`Starting to scan r/${subreddit} for Discord invites...`);
+
         let after: string | null = null;
-        const discordLinks: Array<{
-            link: string,
-            post: string,
-            author: string,
-            date: string,
-            url: string
-        }> = [];
+        const inviteRegex = /(?:https?:\/\/)?(?:www\.)?discord(?:\.gg|app\.com\/invite)\/(\w+)/gi;
 
-        console.log(`Starting to scan r/${subreddit} for Discord links...`);
+        const scanPage = async (pageNumber: number) => {
+            try {
+                const data = await fetchSubredditPage(session, subreddit, after);
+                after = data.data.after;
 
-        for (let i = 0; i < pages; i++) {
-            const url = `https://www.reddit.com/r/${subreddit}/hot/.json?&raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=102`;
-            const response = await session.get(url);
-            if (response.status !== 200) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data: RedditResponse = await response.json();
-
-            for (const post of data.data.children) {
-                const content = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
-                const matches = content.match(/discord\.gg\/[\w-]+/g);
-
-                if (matches) {
-                    matches.forEach(link => {
-                        discordLinks.push({
-                            link,
-                            post: post.data.permalink,
-                            author: post.data.author,
-                            date: new Date(post.data.created_utc * 1000).toISOString(),
-                            url: `https://reddit.com${post.data.permalink}`
+                data.data.children.forEach(post => {
+                    const content = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
+                    const matches = content.match(inviteRegex);
+                    if (matches) {
+                        matches.forEach(match => {
+                            const invite = match.split('/').pop()!;
+                            if (invites.add(invite)) {
+                                logger.info(`Found new Discord invite: ${invite} in post by ${post.data.author}`);
+                            }
                         });
-                    });
-                    console.log(`Found Discord link in post by ${post.data.author}`);
-                }
+                    }
+                });
+
+                return after;
+            } catch (error) {
+                logger.error(`Error scanning page ${pageNumber}:`, error);
+                return null;
             }
+        };
 
-            after = data.data.after;
-            if (!after) break;
+        const pagePromises = Array.from({ length: pages }, (_, i) => scanPage(i + 1));
+        await Promise.all(pagePromises);
 
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        if (discordLinks.length > 0) {
-            const output = discordLinks.map(item =>
-                `Link: ${item.link}\nPost: ${item.url}\nAuthor: ${item.author}\nDate: ${item.date}\n---\n`
-            ).join('\n');
-
-            await fs.writeFile('discord.txt', output);
-            console.log(`Found and saved ${discordLinks.length} Discord links to discord.txt`);
+        if (invites.size > 0) {
+            const output = Array.from(invites).join('\n');
+            await Bun.write('discord_invites.txt', output);
+            logger.info(`Found and saved ${invites.size} unique Discord invites to discord_invites.txt`);
         } else {
-            console.log('No Discord links found');
+            logger.info('No Discord invites found');
         }
 
     } catch (error) {
-        console.error('Error scanning subreddit:', error);
+        logger.error('Error scanning subreddit:', error);
     } finally {
         await session.close();
     }
 }
 
 scanSubredditForDiscordLinks('oldrobloxrevivals', 10);
-

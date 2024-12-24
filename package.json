@@ -9,6 +9,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "node-tls-client": "^2.0.0"
+    "node-tls-client": "^2.0.0",
+    "winston": "^3.17.0"
   }
 }
