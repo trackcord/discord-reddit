@@ -158,9 +158,11 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
                     try {
                         const commentsData = await fetchPostComments(session, post.data.permalink);
-                        if (commentsData[1]?.data?.children) {
-                            processComments(commentsData[1].data.children, inviteRegex, invites);
+                        // for each comment, extract invites
+                        for (const comments of commentsData) {
+                            processComments(comments.data.children, inviteRegex, invites);
                         }
+                        await Bun.sleep(2000);
                     } catch (error) {
                         logger.error(`Error fetching comments for post ${post.data.id}:`, error);
                     }
