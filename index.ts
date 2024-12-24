@@ -161,8 +161,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                         if (commentsData[1]?.data?.children) {
                             processComments(commentsData[1].data.children, inviteRegex, invites);
                         }
-
-                        await new Promise(resolve => setTimeout(resolve, 1000));
                     } catch (error) {
                         logger.error(`Error fetching comments for post ${post.data.id}:`, error);
                     }
@@ -175,13 +173,13 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                 }
 
 
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await Bun.sleep(2000);
                 logger.info(`Processed page ${processedPages}/${pages}, found ${invites.size} unique invites so far`);
 
             } catch (error) {
                 logger.error(`Error processing page ${processedPages + 1}:`, error);
 
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                await Bun.sleep(5000);
             }
         }
 
@@ -201,4 +199,4 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 }
 
 
-scanSubredditForDiscordLinks('oldrobloxrevivals', 10);
+scanSubredditForDiscordLinks('oldrobloxrevivals', 200);
