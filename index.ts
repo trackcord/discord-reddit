@@ -158,7 +158,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
                     try {
                         const commentsData = await fetchPostComments(session, post.data.permalink);
-                        // for each comment, extract invites
                         for (const comments of commentsData) {
                             processComments(comments.data.children, inviteRegex, invites);
                         }
