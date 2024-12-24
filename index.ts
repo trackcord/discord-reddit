@@ -60,6 +60,7 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
     const invites = new Set<string>();
     let processedPages = 0;
     let after: string | null = null;
+    let noMorePages = false;
 
     try {
         await session.init();
@@ -67,13 +68,14 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
         const inviteRegex = /(?:https?:\/\/)?(?:www\.)?discord(?:\.gg|app\.com\/invite)\/(\w+)/gi;
 
-        while (processedPages < pages) {
+        while (processedPages < pages && !noMorePages) {
             try {
                 const data = await fetchSubredditPage(session, subreddit, after);
                 processedPages++;
 
                 if (!data.data.children.length) {
                     logger.info('No more posts to process');
+                    noMorePages = true;
                     break;
                 }
 
@@ -82,7 +84,7 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                     const matches = content.match(inviteRegex);
                     if (matches) {
                         matches.forEach(match => {
-                            const invite = match.split('/').pop()!.toLowerCase();
+                            const invite = match.split('/').pop()!;
                             if (invites.add(invite)) {
                                 logger.info(`Found new Discord invite: ${invite} in post by ${post.data.author}`);
                             }
@@ -93,6 +95,7 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                 after = data.data.after;
                 if (!after) {
                     logger.info('Reached end of subreddit');
+                    noMorePages = true;
                     break;
                 }
 
@@ -113,6 +116,10 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
             logger.info('Scan complete. No Discord invites found');
         }
 
+        if (noMorePages) {
+            logger.info(`Scan ended early. Processed ${processedPages} pages out of requested ${pages} due to no more content.`);
+        }
+
     } catch (error) {
         logger.error('Fatal error scanning subreddit:', error);
     } finally {
@@ -120,5 +127,5 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
     }
 }
 
-// Start the scan
-scanSubredditForDiscordLinks('oldrobloxrevivals', 10);
+scanSubredditForDiscordLinks('oldrobloxrevivals', 200);
+
