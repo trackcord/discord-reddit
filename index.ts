@@ -1,6 +1,7 @@
 import { Session, ClientIdentifier } from "node-tls-client";
 import winston from 'winston';
 
+
 const logger = winston.createLogger({
     level: 'info',
     format: winston.format.combine(
@@ -23,6 +24,21 @@ interface RedditPost {
         author: string;
         created_utc: number;
         permalink: string;
+        id: string;
+    }
+}
+
+interface RedditComment {
+    data: {
+        body: string;
+        author: string;
+        created_utc: number;
+        permalink: string;
+        replies?: {
+            data?: {
+                children: RedditComment[];
+            }
+        }
     }
 }
 
@@ -30,6 +46,13 @@ interface RedditResponse {
     data: {
         after: string | null;
         children: RedditPost[];
+    }
+}
+
+interface RedditCommentsResponse {
+    kind: string;
+    data: {
+        children: RedditComment[];
     }
 }
 
@@ -47,6 +70,50 @@ async function fetchSubredditPage(session: Session, subreddit: string, after: st
     return await response.json();
 }
 
+async function fetchPostComments(session: Session, permalink: string): Promise<RedditCommentsResponse[]> {
+    const url = `https://www.reddit.com${permalink}.json?sort=top&raw_json=1&profile_img=false&sr_detail=false&context=`;
+    const response = await session.get(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
+
+    if (response.status !== 200) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+}
+
+function extractInvitesFromText(text: string, inviteRegex: RegExp): Set<string> {
+    const invites = new Set<string>();
+    const matches = text.match(inviteRegex);
+    if (matches) {
+        matches.forEach(match => {
+            const invite = match.split('/').pop()!.toLowerCase();
+            invites.add(invite);
+        });
+    }
+    return invites;
+}
+
+function processComments(comments: RedditComment[], inviteRegex: RegExp, invites: Set<string>) {
+    for (const comment of comments) {
+        if (comment.data.body) {
+            const newInvites = extractInvitesFromText(comment.data.body, inviteRegex);
+            newInvites.forEach(invite => {
+                if (invites.add(invite)) {
+                    logger.info(`Found new Discord invite: ${invite} in comment by ${comment.data.author}`);
+                }
+            });
+        }
+
+
+        if (comment.data.replies?.data?.children) {
+            processComments(comment.data.replies.data.children, inviteRegex, invites);
+        }
+    }
+}
+
 async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 10) {
     const session = new Session({
         clientIdentifier: ClientIdentifier.chrome_120,
@@ -60,7 +127,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
     const invites = new Set<string>();
     let processedPages = 0;
     let after: string | null = null;
-    let noMorePages = false;
 
     try {
         await session.init();
@@ -68,42 +134,53 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
         const inviteRegex = /(?:https?:\/\/)?(?:www\.)?discord(?:\.gg|app\.com\/invite)\/(\w+)/gi;
 
-        while (processedPages < pages && !noMorePages) {
+        while (processedPages < pages) {
             try {
                 const data = await fetchSubredditPage(session, subreddit, after);
                 processedPages++;
 
                 if (!data.data.children.length) {
                     logger.info('No more posts to process');
-                    noMorePages = true;
                     break;
                 }
 
-                data.data.children.forEach(post => {
+
+                for (const post of data.data.children) {
+
                     const content = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
-                    const matches = content.match(inviteRegex);
-                    if (matches) {
-                        matches.forEach(match => {
-                            const invite = match.split('/').pop()!;
-                            if (invites.add(invite)) {
-                                logger.info(`Found new Discord invite: ${invite} in post by ${post.data.author}`);
-                            }
-                        });
+                    const postInvites = extractInvitesFromText(content, inviteRegex);
+                    postInvites.forEach(invite => {
+                        if (invites.add(invite)) {
+                            logger.info(`Found new Discord invite: ${invite} in post by ${post.data.author}`);
+                        }
+                    });
+
+
+                    try {
+                        const commentsData = await fetchPostComments(session, post.data.permalink);
+                        if (commentsData[1]?.data?.children) {
+                            processComments(commentsData[1].data.children, inviteRegex, invites);
+                        }
+
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    } catch (error) {
+                        logger.error(`Error fetching comments for post ${post.data.id}:`, error);
                     }
-                });
+                }
 
                 after = data.data.after;
                 if (!after) {
                     logger.info('Reached end of subreddit');
-                    noMorePages = true;
                     break;
                 }
+
 
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 logger.info(`Processed page ${processedPages}/${pages}, found ${invites.size} unique invites so far`);
 
             } catch (error) {
                 logger.error(`Error processing page ${processedPages + 1}:`, error);
+
                 await new Promise(resolve => setTimeout(resolve, 5000));
             }
         }
@@ -116,10 +193,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
             logger.info('Scan complete. No Discord invites found');
         }
 
-        if (noMorePages) {
-            logger.info(`Scan ended early. Processed ${processedPages} pages out of requested ${pages} due to no more content.`);
-        }
-
     } catch (error) {
         logger.error('Fatal error scanning subreddit:', error);
     } finally {
@@ -127,5 +200,5 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
     }
 }
 
-scanSubredditForDiscordLinks('oldrobloxrevivals', 200);
 
+scanSubredditForDiscordLinks('oldrobloxrevivals', 10);
