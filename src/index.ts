@@ -35,12 +35,9 @@ async function fetchSubredditPage(session: Session, subreddit: string, after: st
 
 function extractInvitesFromText(text: string, inviteRegex: RegExp): Set<string> {
     const invites = new Set<string>();
-    const matches = text.match(inviteRegex);
-    if (matches) {
-        matches.forEach(match => {
-            const invite = match.replace(/(https?:\/\/)?(www\.)?/g, '');
-            invites.add(invite);
-        });
+    let match: RegExpExecArray | null;
+    while ((match = inviteRegex.exec(text)) !== null) {
+        invites.add(match[1]);
     }
     return invites;
 }
@@ -64,7 +61,7 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
         await session.init();
         logger.info(`Starting to scan r/${subreddit} for Discord invites...`);
 
-        const inviteRegex = /(?:https?:\/\/)?(?:www\.|ptb\.|canary\.)?discord(?:app)?\.(?:(?:com|gg)[/\\]+(?:invite|servers)[/\\]+[a-z0-9-_]+)|(?:https?:\/\/)?(?:www\.)?(?:dsc\.gg|invite\.gg+|discord\.link|(?:discord\.(gg|io|me|li|id))|disboard\.org)[/\\]+[a-z0-9-_/]+/g;
+        const inviteRegex = /(?:https?:\/\/)?(?:www\.)?(?:discord\.(?:gg|io|me|com)|discordapp\.com\/invite)\/([a-zA-Z0-9-]+)/g;
 
         while (processedPages < pages) {
             try {
@@ -78,7 +75,6 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
 
 
                 for (const post of data.data.children) {
-
                     const content = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
                     const postInvites = extractInvitesFromText(content, inviteRegex);
                     postInvites.forEach(invite => {
