@@ -34,8 +34,13 @@ interface RedditResponse {
 }
 
 async function fetchSubredditPage(session: Session, subreddit: string, after: string | null): Promise<RedditResponse> {
-    const url = `https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&after=${after}&limit=103`;
-    const response = await session.get(url);
+    const url = `https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
+    const response = await session.get(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    });
+
     if (response.status !== 200) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -43,27 +48,41 @@ async function fetchSubredditPage(session: Session, subreddit: string, after: st
 }
 
 async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 10) {
-    const session = new Session({ clientIdentifier: ClientIdentifier.chrome_120, timeout: 30000 });
+    const session = new Session({
+        clientIdentifier: ClientIdentifier.chrome_120,
+        timeout: 30000,
+        headers: {
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'application/json'
+        }
+    });
+
     const invites = new Set<string>();
+    let processedPages = 0;
+    let after: string | null = null;
 
     try {
         await session.init();
         logger.info(`Starting to scan r/${subreddit} for Discord invites...`);
 
-        let after: string | null = null;
         const inviteRegex = /(?:https?:\/\/)?(?:www\.)?discord(?:\.gg|app\.com\/invite)\/(\w+)/gi;
 
-        const scanPage = async (pageNumber: number) => {
+        while (processedPages < pages) {
             try {
                 const data = await fetchSubredditPage(session, subreddit, after);
-                after = data.data.after;
+                processedPages++;
+
+                if (!data.data.children.length) {
+                    logger.info('No more posts to process');
+                    break;
+                }
 
                 data.data.children.forEach(post => {
                     const content = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
                     const matches = content.match(inviteRegex);
                     if (matches) {
                         matches.forEach(match => {
-                            const invite = match.split('/').pop()!;
+                            const invite = match.split('/').pop()!.toLowerCase();
                             if (invites.add(invite)) {
                                 logger.info(`Found new Discord invite: ${invite} in post by ${post.data.author}`);
                             }
@@ -71,29 +90,35 @@ async function scanSubredditForDiscordLinks(subreddit: string, pages: number = 1
                     }
                 });
 
-                return after;
-            } catch (error) {
-                logger.error(`Error scanning page ${pageNumber}:`, error);
-                return null;
-            }
-        };
+                after = data.data.after;
+                if (!after) {
+                    logger.info('Reached end of subreddit');
+                    break;
+                }
 
-        const pagePromises = Array.from({ length: pages }, (_, i) => scanPage(i + 1));
-        await Promise.all(pagePromises);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                logger.info(`Processed page ${processedPages}/${pages}, found ${invites.size} unique invites so far`);
+
+            } catch (error) {
+                logger.error(`Error processing page ${processedPages + 1}:`, error);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
 
         if (invites.size > 0) {
             const output = Array.from(invites).join('\n');
             await Bun.write('discord_invites.txt', output);
-            logger.info(`Found and saved ${invites.size} unique Discord invites to discord_invites.txt`);
+            logger.info(`Scan complete. Found and saved ${invites.size} unique Discord invites to discord_invites.txt`);
         } else {
-            logger.info('No Discord invites found');
+            logger.info('Scan complete. No Discord invites found');
         }
 
     } catch (error) {
-        logger.error('Error scanning subreddit:', error);
+        logger.error('Fatal error scanning subreddit:', error);
     } finally {
         await session.close();
     }
 }
 
+// Start the scan
 scanSubredditForDiscordLinks('oldrobloxrevivals', 10);
