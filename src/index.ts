@@ -19,7 +19,6 @@ const logger: winston.Logger = winston.createLogger({
 	),
 	transports: [
 		new winston.transports.Console(),
-		new winston.transports.File({ filename: "discord_invites.log" }),
 	],
 });
 

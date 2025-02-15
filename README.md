@@ -8,7 +8,7 @@ This tool helps you find Discord invite links in Reddit comments and posts using
 - Uses the Reddit API to fetch data with customizable pagination
 - Extracts unique Discord invite links using regex
 - Includes rate limiting and error handling for reliable scraping
-- Provides detailed logging to both the console and a file
+- Provides detailed logging to both the console
 - Saves results to a text file
 
 ## Prerequisites
@@ -53,7 +53,6 @@ bun src/index.ts
 This will:
 
 - Scan the configured subreddit for Discord invites
-- Log progress and found invites to the console and `discord_invites.log`
 - Save unique invite codes to `discord_invites.txt`
 
 ### License
