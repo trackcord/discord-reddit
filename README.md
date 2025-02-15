@@ -1,20 +1,20 @@
 # Discord Invite Scraper for Reddit Comments
 
-A tool that scans Reddit comments and posts for Discord invite links using Bun. It efficiently processes multiple pages of subreddit content and extracts unique Discord invites.
+This tool helps you find Discord invite links in Reddit comments and posts using Bun. It efficiently scans multiple pages of subreddit content and extracts unique Discord invites.
 
 ## Features
 
-- Scans specified subreddits for Discord invites in posts and comments
-- Uses Reddit API to fetch data with configurable pagination
-- Extracts unique Discord invite links using regex matching
-- Rate limiting and error handling for reliable scraping
-- Detailed logging to both console and file
+- Scans specific subreddits for Discord invites in posts and comments
+- Uses the Reddit API to fetch data with customizable pagination
+- Extracts unique Discord invite links using regex
+- Includes rate limiting and error handling for reliable scraping
+- Provides detailed logging to both the console and a file
 - Saves results to a text file
 
 ## Prerequisites
 
 - [Bun](https://bun.sh/) installed on your system
-- [Reddit](https://reddit.com) account with session credentials
+- A [Reddit](https://reddit.com/) account with session credentials
 
 ## Installation
 
@@ -25,7 +25,7 @@ git clone https://github.com/trackcord/discord-reddit.git
 cd discord-reddit
 ```
 
-2. Install dependencies:
+2. Install the dependencies:
 
 ```sh
 bun install
@@ -33,18 +33,18 @@ bun install
 
 ### Configuration
 
-Edit the config.ts file with your settings:
+Edit the `config.ts` file with your settings:
 
-- redditSession: Your Reddit session cookie
-- redditToken: Your Reddit token
-- subreddit: Target subreddit to scan
-- pagesToScan: Number of pages to process
-- sleepBetweenRequests: Delay between requests (milliseconds)
-- sleepOnError: Delay after encountering an error (milliseconds)
+- `redditSession`: Your Reddit session cookie
+- `redditToken`: Your Reddit token
+- `subreddit`: The target subreddit to scan
+- `pagesToScan`: The number of pages to process
+- `sleepBetweenRequests`: Delay between requests (in milliseconds)
+- `sleepOnError`: Delay after encountering an error (in milliseconds)
 
 ### Usage
 
-Run the scraper.
+Run the scraper:
 
 ```sh
 bun src/index.ts
@@ -53,9 +53,9 @@ bun src/index.ts
 This will:
 
 - Scan the configured subreddit for Discord invites
-- Log progress and found invites to console and `discord_invites.log`
+- Log progress and found invites to the console and `discord_invites.log`
 - Save unique invite codes to `discord_invites.txt`
 
 ### License
 
-[WTFPL](/LICENSE) - Do What The F\*ck You Want To Public License
+This project is licensed under the [WTFPL](/LICENSE) - Do What The F\*ck You Want To Public License.
