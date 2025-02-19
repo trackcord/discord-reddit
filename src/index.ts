@@ -1,6 +1,6 @@
 import { ClientIdentifier, type Response, Session } from "node-tls-client";
 import winston from "winston";
-import fs from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import type { RedditPostResponse } from "./types/post";
 import type { RedditComment, RedditCommentsResponse } from "./types/comment";
 import config from "./config";
@@ -98,11 +98,11 @@ function extractInvitesFromText(
  * @param {RegExp} inviteRegex - The regular expression to use for matching Discord invites.
  * @param {Set<string>} invites - The set to store unique Discord invite codes found in the comments.
  */
-function processComments(
+async function processComments(
 	comments: RedditComment[],
 	inviteRegex: RegExp,
 	invites: Set<string>,
-): void {
+): Promise<void> {
 	for (const comment of comments) {
 		if (comment.data.body) {
 			const commentInvites: Set<string> = extractInvitesFromText(
@@ -115,11 +115,12 @@ function processComments(
 					logger.info(
 						`Found new Discord invite: ${invite} in comment by ${comment.data.author}`,
 					);
+					await appendFile("discord_invites.txt", `${invite}\n`);
 				}
 			}
 		}
 		if (comment.data.replies?.data?.children) {
-			processComments(
+			await processComments(
 				comment.data.replies.data.children,
 				inviteRegex,
 				invites,
@@ -138,9 +139,10 @@ async function scanSubredditForDiscordLinks(
 	pages: number = config.pagesToScan,
 ): Promise<void> {
 	const session: Session = new Session({
-		clientIdentifier: ClientIdentifier[
-			config.clientIdentifier as keyof typeof ClientIdentifier
-		],
+		clientIdentifier:
+			ClientIdentifier[
+				config.clientIdentifier as keyof typeof ClientIdentifier
+			],
 		timeout: config.timeout,
 		headers: config.headers,
 	});
@@ -182,6 +184,10 @@ async function scanSubredditForDiscordLinks(
 							logger.info(
 								`Found new Discord invite: ${invite} in post by ${post.data.author}`,
 							);
+							await appendFile(
+								"discord_invites.txt",
+								`${invite}\n`,
+							);
 						}
 					}
 
@@ -192,7 +198,7 @@ async function scanSubredditForDiscordLinks(
 								post.data.permalink,
 							);
 						for (const comments of commentsData) {
-							processComments(
+							await processComments(
 								comments.data.children,
 								inviteRegex,
 								invites,
@@ -230,15 +236,9 @@ async function scanSubredditForDiscordLinks(
 			}
 		}
 
-		if (invites.size > 0) {
-			const output: string = Array.from(invites).join("\n");
-			await fs.writeFile("discord_invites.txt", output);
-			logger.info(
-				`Scan complete. Found and saved ${invites.size} unique Discord invites to discord_invites.txt`,
-			);
-		} else {
-			logger.info("Scan complete. No Discord invites found");
-		}
+		logger.info(
+			`Scan complete. Found ${invites.size} unique Discord invites and saved them to discord_invites.txt`,
+		);
 	} catch (error) {
 		logger.error(`Error initializing session: ${error}`);
 	} finally {
