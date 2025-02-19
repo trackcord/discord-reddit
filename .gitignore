@@ -138,3 +138,6 @@ dist
 # Logs
 discord_invites.txt
 discord_invites.log
+
+# Config
+src/config.ts
