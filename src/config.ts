@@ -2,9 +2,9 @@ import { ClientIdentifier } from "node-tls-client";
 import type { Config } from "./types/config";
 
 const config: Config = {
-	// Reddit session and token
-	redditSession: "[TRUNCATED]",
-	redditToken: "[TRUNCATED]",
+	// Reddit session and token, you can get these by logging into Reddit and inspecting the cookies.
+	redditSession: "[TRUNCATED]", // reddit_session
+	redditToken: "[TRUNCATED]", // token_v2
 
 	// Subreddit configuration
 	subreddit: "[TRUNCATED]",
