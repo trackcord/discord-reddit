@@ -1,12 +1,10 @@
 import { ClientIdentifier, type Response, Session } from "node-tls-client";
 import winston from "winston";
+import fs from "node:fs/promises";
 import type { RedditPostResponse } from "./types/post";
 import type { RedditComment, RedditCommentsResponse } from "./types/comment";
 import config from "./config";
 
-/**
- * Winston logger configuration for both console and file logging.
- */
 const logger: winston.Logger = winston.createLogger({
 	level: "info",
 	format: winston.format.combine(
@@ -36,7 +34,7 @@ async function fetchSubredditPage(
 	subreddit: string,
 	after: string | null,
 ): Promise<RedditPostResponse> {
-	const url: string =
+	const url =
 		`https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
 	const response: Response = await session.get(url, {
 		cookies: {
@@ -61,8 +59,7 @@ async function fetchPostComments(
 	session: Session,
 	permalink: string,
 ): Promise<RedditCommentsResponse[]> {
-	const url: string =
-		`https://www.reddit.com${permalink}.json?sort=top&raw_json=1`;
+	const url = `https://www.reddit.com${permalink}.json?sort=top&raw_json=1`;
 	const response: Response = await session.get(url, {
 		cookies: {
 			reddit_session: config.redditSession,
@@ -134,7 +131,7 @@ function processComments(
 /**
  * Scans a subreddit for Discord invite links.
  * @param {string} subreddit - The name of the subreddit to scan.
- * @param {number} pages - The number of pages to scan (default is set in config).
+ * @param {number} pages - The number of pages to scan.
  */
 async function scanSubredditForDiscordLinks(
 	subreddit: string,
@@ -173,7 +170,7 @@ async function scanSubredditForDiscordLinks(
 				}
 
 				for (const post of data.data.children) {
-					const content: string =
+					const content =
 						`${post.data.title} ${post.data.selftext} ${post.data.url}`;
 					const postInvites: Set<string> = extractInvitesFromText(
 						content,
@@ -188,7 +185,6 @@ async function scanSubredditForDiscordLinks(
 						}
 					}
 
-					// Fetch and process comments for each post
 					try {
 						const commentsData: RedditCommentsResponse[] =
 							await fetchPostComments(
@@ -209,8 +205,11 @@ async function scanSubredditForDiscordLinks(
 						);
 					}
 
-					await Bun.sleep(config.sleepBetweenRequests);
+					await new Promise((resolve) =>
+						setTimeout(resolve, config.sleepBetweenRequests)
+					);
 				}
+
 				after = data.data.after;
 				if (!after) {
 					logger.info("Reached end of subreddit");
@@ -225,13 +224,15 @@ async function scanSubredditForDiscordLinks(
 					`Error processing page ${processedPages + 1}:`,
 					error,
 				);
-				await Bun.sleep(config.sleepOnError);
+				await new Promise((resolve) =>
+					setTimeout(resolve, config.sleepOnError)
+				);
 			}
 		}
 
 		if (invites.size > 0) {
 			const output: string = Array.from(invites).join("\n");
-			await Bun.write("discord_invites.txt", output);
+			await fs.writeFile("discord_invites.txt", output);
 			logger.info(
 				`Scan complete. Found and saved ${invites.size} unique Discord invites to discord_invites.txt`,
 			);

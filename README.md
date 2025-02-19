@@ -1,6 +1,8 @@
 # Discord Invite Scraper for Reddit Comments
 
-This tool helps you find Discord invite links in Reddit comments and posts using Bun. It efficiently scans multiple pages of subreddit content and extracts unique Discord invites.
+This tool helps you find Discord invite links in Reddit comments and posts. It
+efficiently scans multiple pages of subreddit content and extracts unique
+Discord invites.
 
 ## Features
 
@@ -57,4 +59,5 @@ This will:
 
 ### License
 
-This project is licensed under the [WTFPL](/LICENSE) - Do What The F\*ck You Want To Public License.
+This project is licensed under the [WTFPL](/LICENSE) - Do What The F\*ck You
+Want To Public License.
