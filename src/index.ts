@@ -1,6 +1,7 @@
-import { Session, ClientIdentifier, type Response } from "node-tls-client";
+import { ClientIdentifier, type Response, Session } from "node-tls-client";
 import winston from "winston";
 import type { RedditPostResponse } from "./types/post";
+import type { RedditComment, RedditCommentsResponse } from "./types/comment";
 import config from "./config";
 
 /**
@@ -12,7 +13,10 @@ const logger: winston.Logger = winston.createLogger({
 		winston.format.colorize(),
 		winston.format.timestamp(),
 		winston.format.printf(
-			({ timestamp, level, message }: winston.Logform.TransformableInfo) => {
+			(
+				{ timestamp, level, message }:
+					winston.Logform.TransformableInfo,
+			) => {
 				return `[${timestamp}] [${level}] ${message}`;
 			},
 		),
@@ -32,7 +36,8 @@ async function fetchSubredditPage(
 	subreddit: string,
 	after: string | null,
 ): Promise<RedditPostResponse> {
-	const url: string = `https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
+	const url: string =
+		`https://www.reddit.com/r/${subreddit}/hot/.json?raw_json=1&t=&after=${after}&count=0&sr_detail=false&limit=200`;
 	const response: Response = await session.get(url, {
 		cookies: {
 			reddit_session: config.redditSession,
@@ -44,6 +49,31 @@ async function fetchSubredditPage(
 		throw new Error(`HTTP error! status: ${response.status}`);
 	}
 	return (await response.json()) as RedditPostResponse;
+}
+
+/**
+ * Fetches comments for a given post.
+ * @param {Session} session - The TLS session to use for the request.
+ * @param {string} permalink - The permalink of the post to fetch comments from.
+ * @returns {Promise<RedditCommentsResponse[]>} A promise that resolves to the Reddit API response containing comments.
+ */
+async function fetchPostComments(
+	session: Session,
+	permalink: string,
+): Promise<RedditCommentsResponse[]> {
+	const url: string =
+		`https://www.reddit.com${permalink}.json?sort=top&raw_json=1`;
+	const response: Response = await session.get(url, {
+		cookies: {
+			reddit_session: config.redditSession,
+			token_v2: config.redditToken,
+		},
+	});
+
+	if (response.status !== 200) {
+		throw new Error(`HTTP error! status: ${response.status}`);
+	}
+	return (await response.json()) as RedditCommentsResponse[];
 }
 
 /**
@@ -66,6 +96,42 @@ function extractInvitesFromText(
 }
 
 /**
+ * Processes comments recursively to extract Discord invite links.
+ * @param {RedditComment[]} comments - An array of Reddit comments to process.
+ * @param {RegExp} inviteRegex - The regular expression to use for matching Discord invites.
+ * @param {Set<string>} invites - The set to store unique Discord invite codes found in the comments.
+ */
+function processComments(
+	comments: RedditComment[],
+	inviteRegex: RegExp,
+	invites: Set<string>,
+): void {
+	for (const comment of comments) {
+		if (comment.data.body) {
+			const commentInvites: Set<string> = extractInvitesFromText(
+				comment.data.body,
+				inviteRegex,
+			);
+			for (const invite of commentInvites) {
+				const isNewInvite = invites.add(invite);
+				if (isNewInvite) {
+					logger.info(
+						`Found new Discord invite: ${invite} in comment by ${comment.data.author}`,
+					);
+				}
+			}
+		}
+		if (comment.data.replies?.data?.children) {
+			processComments(
+				comment.data.replies.data.children,
+				inviteRegex,
+				invites,
+			);
+		}
+	}
+}
+
+/**
  * Scans a subreddit for Discord invite links.
  * @param {string} subreddit - The name of the subreddit to scan.
  * @param {number} pages - The number of pages to scan (default is set in config).
@@ -75,10 +141,9 @@ async function scanSubredditForDiscordLinks(
 	pages: number = config.pagesToScan,
 ): Promise<void> {
 	const session: Session = new Session({
-		clientIdentifier:
-			ClientIdentifier[
-				config.clientIdentifier as keyof typeof ClientIdentifier
-			],
+		clientIdentifier: ClientIdentifier[
+			config.clientIdentifier as keyof typeof ClientIdentifier
+		],
 		timeout: config.timeout,
 		headers: config.headers,
 	});
@@ -108,7 +173,8 @@ async function scanSubredditForDiscordLinks(
 				}
 
 				for (const post of data.data.children) {
-					const content: string = `${post.data.title} ${post.data.selftext} ${post.data.url}`;
+					const content: string =
+						`${post.data.title} ${post.data.selftext} ${post.data.url}`;
 					const postInvites: Set<string> = extractInvitesFromText(
 						content,
 						inviteRegex,
@@ -121,6 +187,29 @@ async function scanSubredditForDiscordLinks(
 							);
 						}
 					}
+
+					// Fetch and process comments for each post
+					try {
+						const commentsData: RedditCommentsResponse[] =
+							await fetchPostComments(
+								session,
+								post.data.permalink,
+							);
+						for (const comments of commentsData) {
+							processComments(
+								comments.data.children,
+								inviteRegex,
+								invites,
+							);
+						}
+					} catch (error) {
+						logger.error(
+							`Error fetching comments for post ${post.data.id}:`,
+							error,
+						);
+					}
+
+					await Bun.sleep(config.sleepBetweenRequests);
 				}
 				after = data.data.after;
 				if (!after) {
@@ -128,12 +217,14 @@ async function scanSubredditForDiscordLinks(
 					break;
 				}
 
-				await Bun.sleep(config.sleepBetweenRequests);
 				logger.info(
 					`Processed page ${processedPages}/${pages}, found ${invites.size} unique invites so far`,
 				);
 			} catch (error) {
-				logger.error(`Error processing page ${processedPages + 1}:`, error);
+				logger.error(
+					`Error processing page ${processedPages + 1}:`,
+					error,
+				);
 				await Bun.sleep(config.sleepOnError);
 			}
 		}
