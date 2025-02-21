@@ -35,7 +35,7 @@ bun install
 
 ### Configuration
 
-Edit the `config.ts` file with your settings:
+Edit the `src/config.ts` file with your settings:
 
 - `redditSession`: Your Reddit session cookie
 - `redditToken`: Your Reddit token
