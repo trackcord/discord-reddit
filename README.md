@@ -56,8 +56,3 @@ This will:
 
 - Scan the configured subreddit for Discord invites
 - Save unique invite codes to `discord_invites.txt`
-
-### License
-
-This project is licensed under the [WTFPL](/LICENSE) - Do What The F\*ck You
-Want To Public License.
